@@ -85,7 +85,7 @@ RelationSchema InspectRelation(ClientContext &context, optional_ptr<Binder> pare
 	// The argument is a query, written as the caller would in SQL: a `FROM …`
 	// clause or a full `SELECT … FROM …`. (A bare relation name is not a
 	// statement and is rejected — write `FROM tbl`.)
-	Parser parser(context.GetParserOptions());
+	Parser parser(context);
 	try {
 		parser.ParseQuery(relation);
 	} catch (const std::exception &e) {
@@ -102,7 +102,9 @@ RelationSchema InspectRelation(ClientContext &context, optional_ptr<Binder> pare
 	RelationSchema schema;
 	try {
 		auto bound = binder->Bind(*parser.statements[0]);
-		schema.names = bound.names;
+		for (auto &name : bound.names) {
+			schema.names.push_back(name.GetIdentifierName());
+		}
 		schema.types = bound.types;
 	} catch (const std::exception &e) {
 		throw BinderException("table_diff: could not resolve the %s relation (%s): %s", side, relation, e.what());
@@ -147,7 +149,7 @@ struct DiffPlan {
 
 // Look up a named parameter, returning nullptr if absent.
 const Value *FindParam(TableFunctionBindInput &input, const string &name) {
-	auto it = input.named_parameters.find(name);
+	auto it = input.named_parameters.find(Identifier(name));
 	if (it == input.named_parameters.end() || it->second.IsNull()) {
 		return nullptr;
 	}
@@ -567,7 +569,7 @@ string BuildDiffSQL(const DiffPlan &plan, const string &status_col, const string
 }
 
 unique_ptr<TableRef> ParseSubquery(ClientContext &context, const string &sql) {
-	Parser parser(context.GetParserOptions());
+	Parser parser(context);
 	parser.ParseQuery(sql);
 	if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::SELECT_STATEMENT) {
 		throw InternalException("table_diff: generated query was not a single SELECT statement");
@@ -704,16 +706,20 @@ unique_ptr<TableRef> SchemaDiffBindReplace(ClientContext &context, TableFunction
 //===--------------------------------------------------------------------===//
 
 void AddDiffParameters(TableFunction &fun) {
-	fun.named_parameters["pk"] = LogicalType::ANY; // string or list
-	fun.named_parameters["require_matching_columns"] = LogicalType::BOOLEAN;
-	fun.named_parameters["upcast_types"] = LogicalType::BOOLEAN;
-	fun.named_parameters["columns"] = LogicalType::LIST(LogicalType::VARCHAR);
-	fun.named_parameters["ignore"] = LogicalType::LIST(LogicalType::VARCHAR);
-	fun.named_parameters["numeric_tolerance"] = LogicalType::DOUBLE;
-	fun.named_parameters["timestamp_precision"] = LogicalType::VARCHAR;
-	fun.named_parameters["null_equals_empty"] = LogicalType::BOOLEAN;
-	fun.named_parameters["prefix"] = LogicalType::VARCHAR;
-	fun.named_parameters["context"] = LogicalType::LIST(LogicalType::VARCHAR);
+	// Optional keyword-only parameters: the NULL default means "not passed" (see FindParam)
+	auto add = [&](const char *name, const LogicalType &type) {
+		fun.GetSignature().AddKeywordOnly(name, type, Value(type));
+	};
+	add("pk", LogicalType::ANY); // string or list
+	add("require_matching_columns", LogicalType::BOOLEAN);
+	add("upcast_types", LogicalType::BOOLEAN);
+	add("columns", LogicalType::LIST(LogicalType::VARCHAR));
+	add("ignore", LogicalType::LIST(LogicalType::VARCHAR));
+	add("numeric_tolerance", LogicalType::DOUBLE);
+	add("timestamp_precision", LogicalType::VARCHAR);
+	add("null_equals_empty", LogicalType::BOOLEAN);
+	add("prefix", LogicalType::VARCHAR);
+	add("context", LogicalType::LIST(LogicalType::VARCHAR));
 }
 
 void LoadInternal(ExtensionLoader &loader) {
