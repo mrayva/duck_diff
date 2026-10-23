@@ -75,7 +75,7 @@ It's signed with a third-party key, so launch with `-unsigned`:
 
 ```sh
 curl -L -o duck_diff.duckdb_extension \
-  https://github.com/<owner>/duck_diff/releases/download/v0.1.0/duck_diff-v1.5.2-osx_arm64.duckdb_extension
+  https://github.com/<owner>/duck_diff/releases/download/v0.1.0/duck_diff-v2.0.0-osx_arm64.duckdb_extension
 duckdb -unsigned
 ```
 ```sql
@@ -113,7 +113,7 @@ payload is the SHA256 composite of everything before it (1 MiB chunks each
 hashed, then the concatenation hashed — DuckDB's `compute-extension-hash.sh`):
 
 ```sh
-F=duck_diff-v1.5.2-osx_arm64.duckdb_extension
+F=duck_diff-v2.0.0-osx_arm64.duckdb_extension
 size=$(wc -c < "$F")
 head -c $((size - 256)) "$F" > body
 tail -c 256             "$F" > sig
